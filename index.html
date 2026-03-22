@@ -1024,10 +1024,57 @@ function wireEvents(){
   window.addEventListener('beforeunload', captureState);
 }
 function boot(){
+let cloudSaveTimer = null;
+let cloudReady = false;
+let suppressCloudSave = false;
+
+async function loadFromCloud(){
+  try{
+    const res = await fetch('/api/load', { cache: 'no-store' });
+    const payload = await res.json();
+    if(payload && payload.ok && payload.data){
+      appState = payload.data;
+      ensureShape();
+      refreshTop();
+      renderShow();
+      persistState();
+    }
+    cloudReady = true;
+  }catch(e){
+    cloudReady = true;
+    console.error('Cloud load failed', e);
+  }
+}
+
+function scheduleCloudSave(){
+  if(!cloudReady || suppressCloudSave) return;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(saveToCloud, 1200);
+}
+
+async function saveToCloud(){
+  if(!cloudReady || suppressCloudSave) return;
+  try{
+    captureState();
+    await fetch('/api/save', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(appState)
+    });
+  }catch(e){
+    console.error('Cloud save failed', e);
+  }
+}
+
+async function boot(){
   let raw=null;
   try{ raw=JSON.parse(localStorage.getItem(STORAGE_KEY)); }catch(e){}
   appState = raw || clone(FALLBACK_DATA);
   ensureShape(); wireEvents(); refreshTop(); renderShow(); persistState(); updateUndoButton();
+
+  suppressCloudSave = true;
+  await loadFromCloud();
+  suppressCloudSave = false;
 }
 boot();
 })();
